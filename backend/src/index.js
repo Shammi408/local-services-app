@@ -6,7 +6,9 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
-
+import profileRoutes from "./routes/profile.js";
+import serviceRoutes from "./routes/service.js";
+import bookingRoutes from "./routes/booking.js";
 
 
 dotenv.config();
@@ -23,6 +25,9 @@ app.use(morgan("dev")); // log requests
 
 //Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/services", serviceRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 // Health Check
 app.get("/api/health", (req, res) => {

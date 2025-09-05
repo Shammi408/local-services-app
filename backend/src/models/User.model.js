@@ -13,6 +13,12 @@ const UserSchema = new mongoose.Schema(
     // Phone number (optional for now, but useful later for OTP/notifications)
     phone: { type: String },
 
+    // Address (added for profile)
+    address: { type: String, trim: true },
+
+    // Profile picture (URL or base64 string)
+    profilePic: { type: String },
+
     // Store hashed password (never plain text!)
     passwordHash: { type: String, required: true },
 
@@ -24,7 +30,13 @@ const UserSchema = new mongoose.Schema(
     },
 
     // For providers → admin can set this true once verified
-    isVerified: { type: Boolean, default: false }
+    isVerified: { type: Boolean, default: false },
+
+    // Provider-only fields
+    services: [{ type: String }], // e.g. ["Plumbing", "Tutoring"]
+    experience: { type: String },
+
+    // Later: Booking history, reviews can be linked by reference
   },
   {
     timestamps: true // adds createdAt and updatedAt automatically
