@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------
+  App layout fixes (drop-in)
+   - Add after your existing styles
+----------------------------------*/
+
+/* Ensure root/app use full height and behave predictably */
+html, body, #app {
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Make app a vertical flex so header + main fill the screen */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* Nav/header: keep normal height and not cover page content */
+nav, header {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px; /* matches typical header height */
+  height: auto;
+  padding: 0.5rem 1rem;
+  background: transparent; /* let component choose bg; prevents huge heavy fill */
+}
+
+/* If your NavBar uses a big purple background class, make sure it doesn't blow up */
+nav.purple, .purple-banner, .big-banner {
+  max-height: 220px;
+  height: auto;
+  overflow: hidden;
+}
+
+/* Main content fills remaining space */
+main {
+  flex: 1 1 auto;
+  min-height: 0; /* allow children to scroll inside */
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+/* Page container: central column and reasonable top margin */
+.page {
+  max-width: var(--container-width);
+  margin: 16px auto;
+  padding: 16px;
+}
+
+/* Prevent any element from being accidentally huge */
+.hero, .banner, .jumbotron {
+  max-height: 420px;
+  overflow: hidden;
+}
+
+/* Grid & cards: keep them readable and not tiny in corner */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Card baseline */
+.card, .card.skeleton {
+  background: white;
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: 0 3px 18px rgba(2,6,23,0.06);
+  min-height: 120px;
+}
+
+/* Toolbar layout */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+/* Pager centering */
+.pager { display:flex; gap:0.5rem; align-items:center; justify-content:center; margin-top:1rem; }
+
+/* Small screens adjustments */
+@media (max-width: 780px) {
+  .page { padding: 12px; margin: 10px; }
+  nav, header { padding: 0.5rem; }
+}
+
+/* Fallback/navbar helpers (non-tailwind) */
+nav.site-nav { position: sticky; top: 0; z-index: 30; background: white; }
+nav.site-nav .nav-inner { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.logo { color:#2563eb; font-weight:700; text-decoration:none; }
+.nav-links { display:flex; gap:12px; }
+.nav-link { padding:6px 8px; border-radius:6px; text-decoration:none; color:var(--text); }
+.btn-register { background:#2563eb; color:#fff; padding:6px 10px; border-radius:8px; text-decoration:none; }

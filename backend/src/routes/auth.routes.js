@@ -106,13 +106,15 @@ router.post("/login", async (req, res, next) => {
 router.get("/me", requireAuth, async (req, res, next) => {
   try {
     // req.user.sub = userId from JWT payload
-    const user = await User.findById(req.user.sub).select("name email role createdAt");
-
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    
+    const user = await User.findById(userId).select("-passwordHash -__v");
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json({ user });
+    res.json( user );
 
   } catch (err) {
     next(err);
