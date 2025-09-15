@@ -26,6 +26,8 @@ import { ref, watch } from "vue";
 import { useAuthStore } from "../stores/auth";
 import { useBookingsStore } from "../stores/bookings";
 import { useRouter } from "vue-router";
+import { showToast } from "../utils/toast";
+
 const router = useRouter();
 const props = defineProps({
   service: { type: Object, required: true },
@@ -80,10 +82,14 @@ async function submit() {
     const payload = {
       serviceId: props.service._id,
       date: new Date(when.value).toISOString(),
+      notes: notes.value || undefined
     };
     const booking = await bookings.createBooking(payload);
+    // immediate in-app toast on successful create (socket will also emit and may show another toast)
+    showToast("Booking created — check your bookings page", { type: "success" });
     emit("booked", booking);
     close();
+    router.push("/bookings");
   } catch (err) {
     error.value = err?.body?.error || err?.message || "Booking failed";
   } finally {

@@ -8,7 +8,7 @@
 
     <div v-else class="profile">
       <div class="header card">
-        <img :src="provider.profilePic || placeholder" alt="avatar" class="avatar" />
+        <img :src="(provider.profilePic && provider.profilePic.length) ? provider.profilePic : placeholder" alt="avatar" class="avatar" />
         <div class="meta">
           <h1 class="name">{{ provider.name }}</h1>
           <div class="muted">{{ provider.email }}</div>
@@ -51,7 +51,7 @@
         <div class="grid" v-else>
           <div v-for="s in services" :key="s._id" class="svc-card">
             <div class="thumb">
-              <img :src="s.images?.[0] || placeholderService" alt="" />
+              <img :src="(s.images && s.images.length) ? ( (typeof s.images[0] === 'string') ? s.images[0] : (s.images[0].url || placeholderService) ) : placeholderService" alt="" />
             </div>
             <div class="svc-body">
               <h4 class="svc-title">{{ s.title }}</h4>
@@ -136,15 +136,30 @@ async function loadServicesPreview() {
   }
 }
 
-function messageProvider() {
-  // naive routing to a chat creation page - adjust when chat exists
+// providerprofile.vue (replace messageProvider)
+async function messageProvider() {
   if (!auth.user) {
     router.push({ path: "/login", query: { redirect: route.fullPath } });
     return;
   }
-  // Example: navigate to a chat-creation route. Replace with your chat flow.
-  router.push({ path: `/chats/new`, query: { providerId } });
+
+  try {
+    // create or fetch conversation (POST /api/chat/conversation)
+    const res = await api.post("/chat/conversation", { participantId: providerId });
+    const convo = res.body ?? res;
+
+    if (!convo || !convo._id) {
+      throw new Error("Invalid conversation response");
+    }
+
+    // navigate to chat room for this conversation
+    router.push({ path: `/chats/${convo._id}` });
+  } catch (err) {
+    console.error("Failed to start conversation:", err);
+    alert("Could not start chat. Please try again.");
+  }
 }
+
 
 onMounted(async () => {
   await loadProvider();

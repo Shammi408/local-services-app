@@ -1,10 +1,15 @@
-// main.js
+// src/main.js
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
 import router from "./router";
 import "./style.css";
 import api from "./utils/api";
+
+// socket helpers (we only use setup here for the initial mount flow)
+import { setupSocketListeners, joinSocket } from "./utils/socket";
+import { useBookingsStore } from "./stores/bookings";
+import { useAuthStore } from "./stores/auth";
 
 const app = createApp(App);
 
@@ -19,9 +24,55 @@ app.use(router);
 // (api._setLocalToken should exist in your utils/api and attach it to outgoing headers)
 api._setLocalToken(localStorage.getItem("token") || null);
 
-// now router & pinia are ready — add guard
-import { useAuthStore } from "./stores/auth";
+// Import auth after pinia (moved earlier import into top so we can reference in mount logic)
+// NOTE: we import useAuthStore above to access state after mount
 
+app.mount("#app");
+
+// Run post-mount initialization that depends on stores (auth/bookings)
+(async () => {
+  try {
+    const auth = useAuthStore();
+    const bookings = useBookingsStore();
+
+    // If there is a token and no user data yet, try to populate the user (this mirrors your router guard)
+    if (!auth.user && auth.token) {
+      try {
+        // fetchMe in your auth store will call joinSocket(...) and attach subscription as before
+        await auth.fetchMe();
+      } catch (e) {
+        // ignore: fetchMe will logout on failure
+      }
+    }
+
+    // If we now have a logged-in user, ensure socket listeners are attached and we joined
+    if (auth.user && (auth.user.id ?? auth.user._id)) {
+      try {
+        // ensure socket is connected and joined (fetchMe/login already calls joinSocket),
+        // but calling joinSocket again is safe.
+        joinSocket(auth.user?.id ?? auth.user?._id);
+        // attach socket event listeners that update bookings store
+        setupSocketListeners(bookings, {
+          onBookingCreated: (b) => {
+            // optional: you can show a toast or custom handling here
+            // e.g., use your toast lib to show a notification
+            // toast.info(`New booking: ${b._id}`);
+            console.log("booking.created callback (main):", b._id);
+          },
+          onBookingUpdated: (b) => {
+            console.log("booking.updated callback (main):", b._id);
+          }
+        });
+      } catch (e) {
+        console.warn("Socket setup after mount failed", e);
+      }
+    }
+  } catch (err) {
+    console.warn("Post-mount initialization error:", err);
+  }
+})();
+
+// Router guards (existing logic)
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
 
@@ -50,31 +101,26 @@ router.beforeEach(async (to) => {
     return { path: "/" };
   }
 
-
   // requires provider to be verified
   if (to.meta?.requiresVerified && !auth.user?.isVerified) {
     return { path: "/profile" };
   }
+
   // --- Ownership check for editing a service ---
-  // Only run this for the specific edit route: /services/:id/edit
   if (to.path.match(/^\/services\/[^/]+\/edit$/)) {
-    // if not logged in - redirect to login (should already be handled above by requiresAuth)
     if (!auth.user) {
       return { path: "/login", query: { redirect: to.fullPath } };
     }
 
     const serviceId = to.params.id || (to.path.split("/")[2] ?? null);
     if (!serviceId) {
-      // malformed route: redirect to my-services
       return { path: "/my-services" };
     }
 
     try {
-      // fetch service (backend is authoritative)
       const res = await api.get(`/services/${serviceId}`);
       const svc = res.body ?? res;
 
-      // get provider id (handle populated object or plain id)
       let providerId = null;
       if (svc.providerId) {
         providerId = typeof svc.providerId === "string" ? svc.providerId : (svc.providerId._id ?? svc.providerId.id ?? null);
@@ -84,22 +130,25 @@ router.beforeEach(async (to) => {
 
       const myId = auth.user?.id ?? auth.user?._id;
       if (!providerId || !myId || providerId.toString() !== myId.toString()) {
-        // not the owner — redirect to provider dashboard (or service page)
         return { path: "/my-services" };
       }
 
-      // owner OK -> allow navigation
       return true;
     } catch (err) {
-      // handle auth / not found / server error
       if (err?.status === 401) {
         return { path: "/login", query: { redirect: to.fullPath } };
       }
-      // service not found or other error — go back to my-services
       return { path: "/my-services" };
     }
   }
+
   return true;
 });
 
-app.mount("#app");
+// Register SW once (not in guard!)
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("/sw.js")
+    // .then(() => console.log("SW registered"))
+    .catch((err) => console.error("SW registration failed", err));
+}

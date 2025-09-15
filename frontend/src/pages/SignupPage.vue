@@ -1,35 +1,31 @@
 <template>
-  <div class="card">
-    <h3>Create account</h3>
+  <div class="auth-card">
+    <h2 class="auth-title">Create Account</h2>
 
-    <input v-model="name" class="input" placeholder="Full name" />
-    <input v-model="email" class="input" placeholder="Email" type="email" />
-    <input v-model="password" class="input" placeholder="Password" type="password" />
+    <form @submit.prevent="doSignup" class="space-y-4">
+      <input v-model="name" type="text" placeholder="Full name" class="auth-input" required />
+      <input v-model="email" type="email" placeholder="Email" class="auth-input" required />
+      <input v-model="password" type="password" placeholder="Password" class="auth-input" required />
 
-    <div style="margin-top:8px;">
-      <label style="font-size:14px;">Account type</label>
-      <select v-model="role" class="input" style="display:block; width:100%; margin-top:6px;">
-        <option value="user">User</option>
-        <option value="provider">Provider</option>
-      </select>
-    </div>
+      <div>
+        <label class="block text-sm mb-1">Account type</label>
+        <select v-model="role" class="auth-input">
+          <option value="user">User</option>
+          <option value="provider">Provider</option>
+        </select>
+      </div>
 
-    <div style="margin-top:12px;">
-      <button class="btn" :disabled="isSubmitting || !canSubmit" @click="doSignup">
+      <button type="submit" class="auth-btn" :disabled="isSubmitting || !canSubmit">
         {{ isSubmitting ? "Creating..." : "Sign up" }}
       </button>
-    </div>
 
-    <div v-if="error" class="small" style="color:crimson; margin-top:8px">
-      {{ error }}
-    </div>
+      <p v-if="error" class="auth-error">{{ error }}</p>
+    </form>
 
-    <div style="margin-top:12px; font-size:14px;">
+    <p class="auth-footer">
       Already have an account?
-      <router-link to="/login" style="color:blue; text-decoration:underline;">
-        Log in
-      </router-link>
-    </div>
+      <router-link to="/login" class="auth-link">Log in</router-link>
+    </p>
   </div>
 </template>
 
@@ -55,16 +51,9 @@ async function doSignup() {
   error.value = "";
   isSubmitting.value = true;
   try {
-    await auth.register({
-      name: name.value.trim(),
-      email: email.value.trim(),
-      password: password.value,
-      role: role.value
-    });
-    // After signup, user is logged in (access token returned by backend).
+    await auth.register({ name: name.value.trim(), email: email.value.trim(), password: password.value, role: role.value });
     router.push("/services");
   } catch (err) {
-    // api wrapper returns standardized object { status, body, message }
     error.value = err?.body?.error || err?.message || "Signup failed";
   } finally {
     isSubmitting.value = false;
@@ -73,9 +62,12 @@ async function doSignup() {
 </script>
 
 <style scoped>
-/* small helper styles - replace with your app styles */
-.card { max-width:420px; margin:28px auto; padding:18px; border-radius:10px; background:#1f2937; color:#fff; }
-.input { display:block; width:100%; padding:10px; margin-top:8px; border-radius:6px; border:1px solid #333; background:#0f1724; color:#fff; }
-.btn { padding:10px 14px; border-radius:6px; border:none; cursor:pointer; margin-right:8px; background:#2563eb; color:white; }
-.small { font-size:13px; }
+.auth-card { max-width:420px; margin:48px auto; padding:24px; border-radius:10px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.06); }
+.auth-title { font-size:1.5rem; font-weight:600; margin-bottom:16px; color:#111827; }
+.auth-input { display:block; width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-top:6px; }
+.auth-btn { width:100%; padding:10px; border:none; border-radius:6px; background:#2563eb; color:#fff; font-weight:600; cursor:pointer; }
+.auth-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.auth-error { font-size:13px; color:#b91c1c; margin-top:6px; }
+.auth-footer { margin-top:12px; font-size:14px; }
+.auth-link { color:#2563eb; text-decoration:underline; }
 </style>

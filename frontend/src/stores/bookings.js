@@ -25,7 +25,37 @@ export const useBookingsStore = defineStore("bookings", {
       }
     },
 
-
+    /**
+     * Create payment order for given booking.
+     * amountRupees should be a number in rupees (e.g. 500).
+     * Backend returns { paymentId, orderId, amount (paise), currency, keyId }.
+     */
+    async createPaymentOrder(bookingId, amountRupees) {
+      this.loadingAction = true;
+      try {
+        // Prefer real create endpoint; backend will fallback to mock if keys not present
+        const res = await api.post("/payments/create", {
+          bookingId,
+          amount: Number(amountRupees)
+        });
+        const body = res.body ?? res;
+        this.loadingAction = false;
+        return body; // { paymentId, orderId, amount, currency, keyId }
+      } catch (err) {
+        this.loadingAction = false;
+        // Try fallback mock endpoint if server didn't provide create
+        // throw err;
+        try {
+          const fallback = await api.post("/payments/create-mock", {
+            bookingId,
+            amount: Number(amountRupees)
+          });
+          return fallback.body ?? fallback;
+        } catch (err2) {
+          throw err; // original error
+        }
+      }
+    },
     /**
      * Fetch bookings for current user/provider.
      * Optionally pass a status string (e.g. "upcoming", "pending", "confirmed").
@@ -86,6 +116,16 @@ export const useBookingsStore = defineStore("bookings", {
         }
         this.loadingAction = false;
         throw err;
+      }
+    },
+    
+    addOrUpdateBooking(booking) {
+      const id = booking._id ?? booking.id;
+      const idx = this.items.findIndex((b) => (b._id ?? b.id) === id);
+      if (idx !== -1) {
+        this.items[idx] = booking; // update existing
+      } else {
+        this.items.unshift(booking); // add new
       }
     }
   }

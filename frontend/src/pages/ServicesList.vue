@@ -2,10 +2,23 @@
   <div class="page">
     <div class="toolbar">
       <input v-model="q" @keyup.enter="search" class="input" placeholder="Search services..." />
-      <input v-model="city" @keyup.enter="search" class="input small" placeholder="City" />
       <button class="btn" @click="search">Search</button>
       <div style="flex:1"></div>
       <div class="small muted">Showing {{ store.items.length }} of {{ store.total }}</div>
+    </div>
+
+    <!-- Tags row -->
+    <div class="tags-row" v-if="tags.length > 0">
+      <span class="muted small">Tags:</span>
+      <button
+        v-for="t in tags"
+        :key="t"
+        :class="['tag-chip', { active: selectedTag === t }]"
+        @click="toggleTag(t)"
+      >
+        {{ t }}
+      </button>
+      <button v-if="selectedTag" class="tag-clear" @click="clearTag">Clear</button>
     </div>
 
     <div v-if="store.loadingList" class="grid">
@@ -14,7 +27,7 @@
 
     <div v-else>
       <div v-if="store.items.length === 0" class="empty">
-        No services found. Try a different city or search term.
+        No services found. Try a different tag or search term.
       </div>
 
       <div class="grid">
@@ -43,6 +56,9 @@
 
     <div v-if="store.error" class="error small" style="color:crimson">{{ store.error }}</div>
   </div>
+  <div>
+    <Footer />
+  </div>
 </template>
 
 <script setup>
@@ -50,40 +66,40 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useServicesStore } from "../stores/service";
 import ServiceCard from "../components/ServiceCard.vue";
+import api from "../utils/api";
+import Footer from "../components/Footer.vue";
 
 const store = useServicesStore();
 const router = useRouter();
 const route = useRoute();
 
-// query-backed state
 const q = ref(route.query.q ?? "");
-const city = ref(route.query.city ?? "");
-// Parenthesize when mixing ?? with || to avoid JS syntax error
 const page = ref(Number((route.query.page ?? store.page) || 1));
 const limit = ref(Number((route.query.limit ?? store.limit) || 12));
 const providerId = ref(route.query.providerId ?? null);
 
-const placeholder = "/placeholder-service.png";
+const selectedTag = ref(route.query.tag ?? "");
+const tags = ref([]);
 
-function truncate(s, n = 120) {
-  if (!s) return "";
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+async function loadTags() {
+  try {
+    const res = await api.get("/services/tags");
+    tags.value = res.body ?? res;
+  } catch (e) {
+    tags.value = ["tutoring", "plumbing", "grooming", "cleaning", "handyman"];
+  }
 }
 
 async function load(params = {}) {
-  // merge defaults from local refs and passed-in overrides
   const p = {
     page: page.value,
     limit: limit.value,
     q: q.value?.trim() || undefined,
-    city: city.value?.trim() || undefined,
     providerId: providerId.value || undefined,
+    tag: selectedTag.value || undefined,
     ...params,
   };
-
-  // remove undefined keys so backend receives only provided params
   Object.keys(p).forEach((k) => p[k] === undefined && delete p[k]);
-
   try {
     await store.fetchList(p);
   } catch (e) {
@@ -92,15 +108,12 @@ async function load(params = {}) {
 }
 
 function setQueryInUrl() {
-  // keep minimal query in URL for share/back-forward
   const qparams = {};
   if (q.value) qparams.q = q.value;
-  if (city.value) qparams.city = city.value;
   if (providerId.value) qparams.providerId = providerId.value;
+  if (selectedTag.value) qparams.tag = selectedTag.value;
   if (page.value && page.value !== 1) qparams.page = String(page.value);
   if (limit.value && limit.value !== store.limit) qparams.limit = String(limit.value);
-
-  // use replace so we don't spam history when user types
   router.replace({ path: route.path, query: qparams }).catch(() => {});
 }
 
@@ -109,48 +122,46 @@ function search() {
   setQueryInUrl();
   load();
 }
-
 function changePage(p) {
   if (p < 1 || p > store.totalPages) return;
   page.value = p;
   setQueryInUrl();
   load();
 }
-
-function changeLimit(l) {
-  limit.value = l;
+function toggleTag(t) {
+  selectedTag.value = selectedTag.value === t ? "" : t;
   page.value = 1;
   setQueryInUrl();
   load();
 }
-
-onMounted(() => {
-  // initial load uses route.query values already set above
+function clearTag() {
+  selectedTag.value = "";
+  setQueryInUrl();
   load();
+}
+
+onMounted(async () => {
+  await loadTags();
+  await load();
 });
 
-// if the route's query changes externally (back/forward or external link), react
 watch(
   () => route.query,
   (qnew) => {
     q.value = qnew.q ?? "";
-    city.value = qnew.city ?? "";
     providerId.value = qnew.providerId ?? null;
+    selectedTag.value = qnew.tag ?? "";
     page.value = Number(qnew.page ?? store.page ?? 1);
     limit.value = Number(qnew.limit ?? store.limit ?? 12);
     load();
   }
 );
 
-// keep local store.page in sync (in case store updates page)
 watch(
   () => store.page,
-  (v) => {
-    if (v) page.value = v;
-  }
+  (v) => { if (v) page.value = v; }
 );
 
-/* pagination helper: show small window of pages with gaps */
 const pagesToShow = computed(() => {
   const total = store.totalPages || 1;
   const current = page.value || 1;
@@ -160,9 +171,7 @@ const pagesToShow = computed(() => {
 
   if (left > 1) pages.push(1);
   if (left > 2) pages.push("gap");
-
   for (let p = left; p <= right; p++) pages.push(p);
-
   if (right < total - 1) pages.push("gap");
   if (right < total) pages.push(total);
 
@@ -171,35 +180,52 @@ const pagesToShow = computed(() => {
 </script>
 
 <style scoped>
-/* keep existing styles from previous ServicesList (pager + .active) */
-/* inside ServicesList.vue <style scoped> - replace thumb block */
-.thumb {
-  height: 180px;               /* fixed card preview height */
-  overflow: hidden;
-  border-radius: 8px;
-  background: #eef6fb;
-  display:flex; align-items:center; justify-content:center;
-  box-shadow: 0 6px 20px rgba(2,6,23,0.06);
-}
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;          /* important: crops to fill area */
-  display: block;
-  border-radius: 8px;
-}
-.card { 
-  background: white;          /* show white cards on page bg */
-  padding: 12px;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(2,6,23,0.06);
-  color: var(--text);
-}
-.title { font-size:18px; color: #0b1220; font-weight:700; margin-bottom:6px; }
-.meta { color: var(--muted); font-size:13px; display:flex; justify-content:space-between; gap:8px; }
-.desc { color:#344054; margin-top:8px; }
-.card.clickable:hover { transform: translateY(-6px); transition: transform .15s ease; }
+/* Tags row kept as before */
+.tags-row { margin:12px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.tag-chip { padding:6px 12px; border-radius:999px; border:1px solid #ddd; cursor:pointer; background:transparent; }
+.tag-chip.active { background:#2563eb; color:white; border-color:#2563eb; }
+.tag-clear { margin-left:6px; padding:6px 8px; border:none; background:transparent; cursor:pointer; color:#555; }
 
-.pager .btn.active { background:#0ea5e9; }
-.ellipsis { padding:8px 10px; color:#9aa2b2; }
+/* Responsive grid for service cards
+   Mobile: 1 column
+   Tablet (>=720px): 2 columns
+   Desktop (>=1100px): 4 columns
+*/
+.grid {
+  display: grid;
+  gap: 16px;
+  /* default mobile: 1 column */
+  grid-template-columns: repeat(1, 1fr);
+  align-items: start;
+}
+
+/* tablet */
+@media (min-width: 720px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+}
+
+/* desktop */
+@media (min-width: 1100px) {
+  .grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+}
+
+/* small responsive tweaks for pager / toolbar */
+.toolbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.input { padding:8px 10px; border-radius:8px; border:1px solid #e6eef8; }
+.input.small { width:220px; }
+
+/* empty state */
+.empty { padding:24px; text-align:center; color:#6b7280; }
+
+/* pager button active state */
+.pager .btn.active { background:#111827; color:white; }
+
+/* ensure footer spacing */
+.page > div:last-child { margin-top:18px; }
 </style>

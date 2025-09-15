@@ -17,7 +17,10 @@ const UserSchema = new mongoose.Schema(
     address: { type: String, trim: true },
 
     // Profile picture (URL or base64 string)
-    profilePic: { type: String },
+    profilePic: {
+      url: { type: String },
+      public_id: { type: String, default: null }
+    },
 
     // Store hashed password (never plain text!)
     passwordHash: { type: String, required: true },

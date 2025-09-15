@@ -21,7 +21,7 @@ import { onMounted } from "vue";
 import { useRoute } from "vue-router";
 import NavBar from "./components/Navbar.vue";
 import { useAuthStore } from "./stores/auth"; // either .js or not is fine
-
+import { joinSocket } from "./utils/socket";
 const auth = useAuthStore();
 const route = useRoute();
 
@@ -32,6 +32,9 @@ onMounted(() => {
     auth.fetchMe().catch(() => {
       // ignore — fetchMe will logout/clear token on failure
     });
+  }
+   if (auth.user) {
+    joinSocket(auth.user.id ?? auth.user._id);
   }
 });
 </script>

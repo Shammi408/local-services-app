@@ -14,6 +14,8 @@
           <div class="small">Customer: {{ (b.userId && b.userId.name) || b.customerName || 'Customer' }}</div>
           <div class="small">Date: {{ prettyDate(b.date || b.scheduledAt || b.createdAt) }}</div>
           <div class="small">Status: <strong>{{ b.status }}</strong></div>
+          <div class="small">Amount: ₹{{ b.serviceId?.price ?? b.amount ?? '-' }}</div>
+          <div class="small">Payment: <strong>{{ b.paid ? 'Paid' : 'Unpaid' }}</strong></div>
 
           <div style="margin-top:8px">
             <!-- Show Confirm only for pending bookings -->

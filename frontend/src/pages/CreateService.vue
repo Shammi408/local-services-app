@@ -2,20 +2,10 @@
   <div class="page">
     <h1>Create New Service</h1>
 
-    <!-- auth loading -->
     <div v-if="initialLoading" class="card small">Checking account…</div>
+    <div v-else-if="!isProvider" class="card">You are not a provider. Only providers can create services.</div>
+    <div v-else-if="!isVerified" class="card">Your provider account is pending admin verification. You will be able to create services once verified.</div>
 
-    <!-- Not a provider -->
-    <div v-else-if="!isProvider" class="card">
-      You are not a provider. Only providers can create services.
-    </div>
-
-    <!-- Provider not verified -->
-    <div v-else-if="!isVerified" class="card">
-      Your provider account is pending admin verification. You will be able to create services once verified.
-    </div>
-
-    <!-- Form for verified provider -->
     <div v-else class="card">
       <label for="title">Title <span class="req">*</span></label>
       <input id="title" ref="titleRef" v-model="title" class="input" placeholder="e.g. Home plumbing — hourly" :disabled="saving" />
@@ -26,6 +16,26 @@
 
       <label for="category">Category</label>
       <input id="category" v-model="category" class="input" placeholder="e.g. Plumbing, Tutoring" :disabled="saving" />
+
+      <label for="tags">Tags</label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <input id="tags" v-model="tagInput" @keyup.enter.prevent="addTag" class="input small" placeholder="e.g. tutoring" :disabled="saving" />
+        <button class="btn secondary" @click="addTag" :disabled="!tagInput || saving">Add</button>
+      </div>
+
+      <!-- suggestions -->
+      <div class="tag-suggestions" v-if="tagSuggestions.length">
+        <button v-for="t in tagSuggestions" :key="t" class="suggestion" @click="addSuggested(t)" :disabled="saving || tags.length >= MAX_TAGS">
+          {{ t }}
+        </button>
+      </div>
+
+      <div class="tags-row" v-if="tags.length">
+        <button v-for="(t, idx) in tags" :key="t" class="tag-chip">
+          {{ t }}
+          <span style="margin-left:8px; cursor:pointer;" @click.prevent="removeTag(idx)">✕</span>
+        </button>
+      </div>
 
       <label for="price">Price <span class="req">*</span></label>
       <input id="price" type="number" v-model.number="price" class="input" placeholder="e.g. 500" :min="0" :disabled="saving" />
@@ -72,6 +82,14 @@ const description = ref("");
 const category = ref("");
 const price = ref(null);
 
+const tagInput = ref("");
+const tags = ref([]);
+const tagSuggestions = ref([]);
+
+const MAX_TAGS = 5;
+const MAX_FILES = 5;
+const MAX_FILE_SIZE_MB = 5;
+
 const saving = ref(false);
 const error = ref("");
 const success = ref(false);
@@ -81,30 +99,60 @@ const fieldError = ref({ title: "", price: "" });
 const titleRef = ref(null);
 
 // Image upload state
-const MAX_FILES = 5;
-const MAX_FILE_SIZE_MB = 5;
 const files = ref([]); // File[]
 const previews = ref([]);
-const uploadProgress = ref(null); // percent number or null
+const uploadProgress = ref(null);
 
-// ensure auth.user is loaded (safe)
+// helpers
+function normalizeTag(t) {
+  return (t || "").trim().toLowerCase();
+}
+function addTag() {
+  const t = normalizeTag(tagInput.value);
+  if (!t) return;
+  if (tags.value.includes(t)) {
+    tagInput.value = "";
+    return;
+  }
+  if (tags.value.length >= MAX_TAGS) {
+    error.value = `You may add up to ${MAX_TAGS} tags.`;
+    tagInput.value = "";
+    return;
+  }
+  tags.value.push(t);
+  tagInput.value = "";
+  error.value = "";
+}
+function addSuggested(t) {
+  const nt = normalizeTag(t);
+  if (!tags.value.includes(nt) && tags.value.length < MAX_TAGS) tags.value.push(nt);
+}
+function removeTag(i) {
+  tags.value.splice(i, 1);
+}
+
+// auth
 async function ensureAuth() {
   if (!auth.user) {
-    try {
-      await auth.fetchMe();
-    } catch (e) {
-      // not logged in
-    }
+    try { await auth.fetchMe(); } catch (e) {}
   }
 }
 
-// computed flags
 const isProvider = computed(() => !!(auth.user && auth.user.role === "provider"));
 const isVerified = computed(() => !!(auth.user && auth.user.isVerified));
 
 onMounted(async () => {
   initialLoading.value = true;
   await ensureAuth();
+
+  // fetch tag suggestions from server
+  try {
+    const res = await api.get("/services/tags");
+    tagSuggestions.value = (res.body ?? res) || [];
+  } catch (e) {
+    tagSuggestions.value = [];
+  }
+
   initialLoading.value = false;
   if (titleRef.value) titleRef.value.focus();
 });
@@ -121,24 +169,19 @@ function onFilesSelected(e) {
     files.value.push(f);
     createPreview(f);
   }
-  // clear native input so same file can be reselected if removed
   e.target.value = "";
 }
-
 function createPreview(file) {
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    previews.value.push(ev.target.result);
-  };
+  reader.onload = (ev) => previews.value.push(ev.target.result);
   reader.readAsDataURL(file);
 }
-
 function removeFile(idx) {
   files.value.splice(idx, 1);
   previews.value.splice(idx, 1);
 }
 
-// small validator function (client-side)
+// validation
 function validateFields() {
   fieldError.value = { title: "", price: "" };
   let ok = true;
@@ -153,101 +196,73 @@ function validateFields() {
   return ok;
 }
 
-// POST create (uses FormData when files exist)
+// create flow: upload images first (to /api/uploads/image), then POST /api/services
 async function create() {
   error.value = "";
   success.value = false;
 
-  // client-side validation
   if (!validateFields()) return;
-
-  if (!isProvider.value) {
-    error.value = "Only providers can create services.";
-    return;
-  }
-  if (!isVerified.value) {
-    error.value = "Your provider account is not yet verified.";
-    return;
-  }
+  if (!isProvider.value) { error.value = "Only providers can create services."; return; }
+  if (!isVerified.value) { error.value = "Your provider account is not yet verified."; return; }
 
   saving.value = true;
-  uploadProgress.value = null;
+  uploadProgress.value = 0;
+
+  // Prepare upload target and token
+  const API_BASE = (api._API_BASE || import.meta.env.VITE_API_BASE || "http://localhost:3000").replace(/\/+$/, "");
+  const uploadUrl = API_BASE.endsWith("/api") ? `${API_BASE}/uploads/image` : `${API_BASE}/api/uploads/image`;
+  const token = localStorage.getItem("token");
+
+  // collect uploaded images here
+  const uploadedImages = [];
 
   try {
-    // If files selected, use FormData
-    if (files.value.length > 0) {
-      const form = new FormData();
-      form.append("title", title.value.trim());
-      form.append("description", description.value?.trim() ?? "");
-      form.append("category", category.value?.trim() ?? "");
-      form.append("price", String(Number(price.value)));
-      // append files (images[])
-      files.value.forEach((f, i) => form.append("images", f)); // backend should accept images[]
-      // Use raw fetch to track progress (api.raw won't give progress easily). We'll build a fetch call here.
-      // Build full URL
-      const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000/api";
-      const url = `${API_BASE}/services`;
+    // 1) upload files (if any)
+    for (let i = 0; i < files.value.length; i++) {
+      const f = files.value[i];
+      const fd = new FormData();
+      fd.append("file", f);
 
-      // Use XMLHttpRequest to get upload progress (fetch doesn't support progress natively)
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", url, true);
-        // add Authorization header if token exists
-        const token = localStorage.getItem("token");
-        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            uploadProgress.value = Math.round((event.loaded / event.total) * 100);
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(xhr.responseText ? JSON.parse(xhr.responseText) : {});
-          } else {
-            let body = {};
-            try { body = xhr.responseText ? JSON.parse(xhr.responseText) : {}; } catch {}
-            const err = { status: xhr.status, body, message: body?.error || xhr.statusText };
-            reject(err);
-          }
-        };
-
-        xhr.onerror = () => {
-          reject({ status: 0, message: "Network error" });
-        };
-
-        xhr.withCredentials = false; // change to true if backend expects cookies; we send token header
-        xhr.send(form);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await fetch(uploadUrl, {
+        method: "POST",
+        headers, // DO NOT set Content-Type when sending FormData
+        body: fd,
       });
 
-    } else {
-      // no files: fallback to JSON POST via api.post
-      const res = await api.post("/services", {
-        title: title.value.trim(),
-        description: description.value?.trim(),
-        category: category.value?.trim(),
-        price: Number(price.value)
-      });
-      // fine — continue to set created id below if backend returned
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => null);
+        throw { status: resp.status, body: txt, message: "Image upload failed" };
+      }
+
+      const body = await resp.json();
+      uploadedImages.push({ url: body.url, public_id: body.public_id || null });
+
+      // update progress roughly: files completed / total
+      uploadProgress.value = Math.round(((i + 1) / Math.max(1, files.value.length)) * 100);
     }
+
+    // 2) create service (JSON)
+    const payload = {
+      title: title.value.trim(),
+      description: description.value?.trim() ?? "",
+      category: category.value?.trim() ?? "",
+      price: Number(price.value || 0),
+      tags: tags.value || [],
+      images: uploadedImages,
+    };
+
+    await api.post("/services", payload);
 
     success.value = true;
     // Clear form
-    title.value = "";
-    description.value = "";
-    category.value = "";
-    price.value = null;
-    files.value = [];
-    previews.value = [];
+    title.value = ""; description.value = ""; category.value = "";
+    price.value = null; files.value = []; previews.value = []; tags.value = [];
 
-    // redirect to provider services
     setTimeout(() => router.replace("/provider/services"), 800);
   } catch (err) {
-    if (err?.status === 401) {
-      router.push({ path: "/login", query: { redirect: "/services/new" } });
-      return;
-    }
+    if (err?.status === 401) { router.push({ path: "/login", query: { redirect: "/services/new" } }); return; }
+    console.error("create service failed", err);
     error.value = err?.body?.error || err?.message || "Failed to create service";
   } finally {
     saving.value = false;
@@ -257,16 +272,64 @@ async function create() {
 </script>
 
 <style scoped>
-/* add small styles for previews */
-.previews { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
-.preview { position:relative; width:96px; height:72px; border-radius:8px; overflow:hidden; box-shadow:0 6px 18px rgba(2,6,23,0.06); }
+/* Page/card */
+.page { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+.card {
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(2,6,23,0.04);
+  color: var(--text, #0b1220);
+}
+
+/* Headline */
+h1 { margin: 0 0 16px 0; font-size: 28px; }
+
+/* Form layout */
+label { display: block; margin-top: 12px; font-weight:600; color: #111827; }
+.input { display:block; width:100%; padding:10px 12px; margin-top:6px; border-radius:8px; border:1px solid #e6eef8; box-sizing:border-box; font-size:14px; }
+.input.small { width: 220px; padding:8px 10px; }
+
+/* Small helper text */
+.small { font-size:13px; color:#6b7280; margin-top:6px; }
+
+/* Buttons */
+.btn { padding:8px 12px; border-radius:8px; background:#2563eb; color:white; border:none; cursor:pointer; font-weight:600; }
+.btn.secondary { background:transparent; border:1px solid #e6eef8; color:#0f1724; padding:8px 10px; }
+
+/* Top controls row (search/category/price grouping) */
+.form-row { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.form-row > * { flex: 1 1 220px; min-width: 160px; }
+
+/* Tag UI */
+.tag-chip { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#eef2ff; color:#0b3b94; margin-right:8px; margin-bottom:6px; border:none; }
+.tag-suggestions { margin-bottom:8px; display:flex; gap:8px; flex-wrap:wrap; }
+.suggestion { border:1px solid rgba(0,0,0,0.06); background:white; padding:6px 8px; border-radius:6px; cursor:pointer; }
+
+/* Image previews */
+.previews,
+.existing-previews { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:flex-start; }
+.preview {
+  position:relative;
+  width:120px;
+  height:90px;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.04);
+  background:#f8fafc;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
 .preview img { width:100%; height:100%; object-fit:cover; display:block; }
 .preview .tiny { position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.6); color:white; border:none; border-radius:6px; width:22px; height:22px; cursor:pointer; }
-.field-error { color:#b91c1c; font-size:13px; margin-bottom:8px; }
-.req { color:#b91c1c; margin-left:4px; }
 
-.page { max-width: 600px; margin: 0 auto; padding: 20px; }
-.card { background:#fff; padding:20px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
-.input { display:block; width:100%; padding:8px; margin-top:4px; margin-bottom:12px; border:1px solid #ddd; border-radius:6px; }
-.btn { padding:8px 12px; border:none; border-radius:6px; background:#2563eb; color:white; cursor:pointer; }
+/* Field error */
+.field-error { color:#b91c1c; font-size:13px; margin-top:6px; }
+
+/* Responsive tweaks */
+@media (max-width: 720px) {
+  .form-row { flex-direction: column; }
+  .input.small { width:100%; }
+}
 </style>

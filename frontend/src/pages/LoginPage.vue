@@ -1,101 +1,80 @@
 <template>
-  <div class="max-w-md mx-auto mt-20 p-6 bg-white rounded shadow">
-    <h2 class="text-2xl font-semibold mb-4">Login</h2>
+  <div class="auth-card">
+    <h2 class="auth-title">Login</h2>
 
-    <form @submit.prevent="doLogin" class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium mb-1">Email</label>
-        <input v-model="email" type="email" required class="w-full px-3 py-2 border rounded" />
-      </div>
+    <form @submit.prevent="doLogin" class="space-y-4" v-if="!showEnablePrompt">
+      <input v-model="email" type="email" placeholder="Email" class="auth-input" required />
+      <input v-model="password" type="password" placeholder="Password" class="auth-input" required />
 
-      <div>
-        <label class="block text-sm font-medium mb-1">Password</label>
-        <input v-model="password" type="password" required class="w-full px-3 py-2 border rounded" />
-      </div>
+      <button type="submit" class="auth-btn" :disabled="auth.loading">
+        <span v-if="!auth.loading">Login</span>
+        <span v-else>Logging in…</span>
+      </button>
 
-      <div class="flex items-center justify-between">
-        <button
-          type="submit"
-          class="px-4 py-2 bg-blue-600 text-white rounded hover:opacity-90 disabled:opacity-50"
-          :disabled="auth.loading"
-        >
-          <span v-if="!auth.loading">Login</span>
-          <span v-else class="flex items-center gap-2">
-            <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.2"></circle>
-              <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
-            </svg>
-            Logging in...
-          </span>
-        </button>
-
-        <router-link to="/register" class="text-sm text-gray-600 hover:underline">Create account</router-link>
-      </div>
-
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      <p v-if="error" class="auth-error">{{ error }}</p>
     </form>
 
-    <!-- Toast: simple inline notification -->
-    <transition name="fade">
-      <div
-        v-if="showToast"
-        class="fixed right-4 bottom-6 bg-green-600 text-white px-4 py-2 rounded shadow-lg"
-        role="status"
-        aria-live="polite"
-      >
-        {{ toastMessage }}
-      </div>
-    </transition>
+    <!-- After successful login we show the enable-prompt inside the same card -->
+    <EnableNotificationsPrompt
+      v-if="showEnablePrompt"
+      @done="onPromptDone"
+      @skipped="onPromptSkipped"
+    />
+
+    <p class="auth-footer" v-if="!showEnablePrompt">
+      Don’t have an account?
+      <router-link to="/signup" class="auth-link">Sign up</router-link>
+    </p>
   </div>
 </template>
 
 <script setup>
 import { ref } from "vue";
 import { useAuthStore } from "../stores/auth";
-import { useRouter } from "vue-router";
+import EnableNotificationsPrompt from "../components/EnableNotificationsPrompt.vue";
 
 const email = ref("");
 const password = ref("");
 const error = ref("");
 const auth = useAuthStore();
-const router = useRouter();
 
-// toast state
-const showToast = ref(false);
-const toastMessage = ref("");
+const showEnablePrompt = ref(false);
 
 async function doLogin() {
   error.value = "";
   try {
-    // call your auth.login (it sets token & user or fetches me)
     await auth.login(email.value, password.value);
 
-    // show success toast
-    toastMessage.value = "Login successful — redirecting...";
-    showToast.value = true;
-
-    // hide toast after a short time
-    // NOTE: we delay redirect slightly so user can see the toast.
-    // If you want instant redirect, remove the setTimeout and call auth.afterLoginRedirect() directly.
-    setTimeout(() => {
-      showToast.value = false;
-    }, 1200);
-
-    // redirect according to role
-    // auth.afterLoginRedirect() will push provider -> /provider/dashboard, user -> /dashboard
-    // small delay so the toast is visible briefly (1200ms), adjust as desired
-    setTimeout(() => {
-      auth.afterLoginRedirect();
-    }, 400);
-
+    // Show enable notifications prompt (user must click to allow)
+    // We do NOT immediately redirect — wait for user to enable or skip the prompt
+    showEnablePrompt.value = true;
   } catch (err) {
-    // handle error structure from your api helper
     error.value = err?.body?.error || err?.message || "Login failed";
   }
+}
+
+function onPromptDone() {
+  // user enabled notifications (component has attached subscription)
+  // now redirect to appropriate dashboard
+  showEnablePrompt.value = false;
+  auth.afterLoginRedirect();
+}
+
+function onPromptSkipped() {
+  // user chose not to enable — proceed to app
+  showEnablePrompt.value = false;
+  auth.afterLoginRedirect();
 }
 </script>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity .2s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+/* Reuse same styles from signup for consistency */
+.auth-card { max-width:420px; margin:48px auto; padding:24px; border-radius:10px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.06); }
+.auth-title { font-size:1.5rem; font-weight:600; margin-bottom:16px; color:#111827; }
+.auth-input { display:block; width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-top:6px; }
+.auth-btn { width:100%; padding:10px; border:none; border-radius:6px; background:#2563eb; color:#fff; font-weight:600; cursor:pointer; }
+.auth-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.auth-error { font-size:13px; color:#b91c1c; margin-top:6px; }
+.auth-footer { margin-top:12px; font-size:14px; }
+.auth-link { color:#2563eb; text-decoration:underline; }
 </style>

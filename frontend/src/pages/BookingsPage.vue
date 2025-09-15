@@ -15,9 +15,21 @@
             <div style="margin-top:6px;">
               <span class="status-badge" :class="statusClass(b.status)">{{ b.status }}</span>
             </div>
+            <div class="small muted">
+              Payment: <strong>{{ b.paid ? "Paid" : "Unpaid" }}</strong>
+            </div>
           </div>
 
           <div class="right">
+            <!-- Pay now button for owner if not paid -->
+            <button
+              v-if="isOwner(b) && !b.paid && (b.status === 'pending' || b.status === 'confirmed')"
+              class="btn"
+              @click="payNow(b)"
+              :disabled="payLoading[b._id ?? b.id]"
+            >
+              {{ payLoading[b._id ?? b.id] ? "Paying..." : "Pay now" }}
+            </button>
             <!-- User (owner) can cancel (if not already cancelled/completed) -->
             <button
               v-if="isOwner(b) && canCancel(b)"
@@ -27,6 +39,14 @@
             >
               Cancel
             </button>
+            <!-- Show review button for completed bookings -->
+            <router-link
+              v-if="isOwner(b) && b.status === 'completed'"
+              class="btn secondary"
+              :to="`/services/${b.serviceId?._id ?? b.serviceId}#reviews`"
+            >
+              {{ b.hasReviewed ? "Edit Review" : "Give Review" }}
+            </router-link>
 
             <!-- Provider actions -->
             <div v-else-if="isProvider(b)">
@@ -70,12 +90,13 @@
 </template>
 
 <script setup>
-import { onMounted } from "vue";
+import { reactive, onMounted } from "vue";
 import { useBookingsStore } from "../stores/bookings";
 import { useAuthStore } from "../stores/auth";
-
+import api from "../utils/api";
 const bookings = useBookingsStore();
 const auth = useAuthStore();
+const payLoading = reactive({});
 
 function formatDate(dt) {
   try {
@@ -142,6 +163,91 @@ async function confirmAndChange(b, nextStatus) {
   }
 }
 
+// helper: dynamically load Razorpay SDK (idempotent)
+async function loadRazorpayScript() {
+  if (window.Razorpay) return;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load Razorpay SDK"));
+    document.head.appendChild(s);
+  });
+}
+
+async function payNow(b) {
+  const id = b._id ?? b.id;
+  try {
+    payLoading[id] = true;
+
+    // 1) create payment order on backend (bookings store helper we added earlier)
+    // Convert amount to rupees or pass exact rupee amount; your backend will convert to paise
+    const amountRupees = b.amount ?? b.price ?? b.serviceId?.price ?? 0;
+    if (!amountRupees || Number(amountRupees) <= 0) {
+      alert("Invalid amount for payment.");
+      payLoading[id] = false;
+      return;
+    }
+
+    const orderResp = await bookings.createPaymentOrder(id, amountRupees);
+    // expect { paymentId, orderId, keyId, amount (paise), currency }
+    if (!orderResp || !orderResp.orderId || !orderResp.keyId) {
+      alert("Failed to create payment order. Try again.");
+      payLoading[id] = false;
+      return;
+    }
+
+    await loadRazorpayScript();
+
+    const options = {
+      key: orderResp.keyId,
+      amount: orderResp.amount,
+      currency: orderResp.currency || "INR",
+      name: "LocalServe",
+      description: `Booking ${id}`,
+      order_id: orderResp.orderId,
+      handler: async function (response) {
+        try {
+          // verify payment on server
+          await api.post("/payments/verify", {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature,
+            paymentId: orderResp.paymentId
+          });
+
+          // update UI: mark booking paid/confirmed
+          // Prefer re-fetching bookings list to be authoritative
+          await bookings.fetchBookings();
+          alert("Payment successful — booking confirmed.");
+        } catch (err) {
+          console.error("Payment verify failed:", err);
+          alert("Payment verification failed. Contact support.");
+        } finally {
+          payLoading[id] = false;
+        }
+      },
+      prefill: {
+        name: auth.user?.name,
+        email: auth.user?.email
+      },
+      theme: { color: "#2563eb" }
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on("payment.failed", function (resp) {
+      console.error("Razorpay payment failed", resp);
+      alert(resp?.error?.description || "Payment failed");
+      payLoading[id] = false;
+    });
+    rzp.open();
+
+  } catch (err) {
+    console.error("payNow error:", err);
+    alert(err?.message || "Payment initialization failed");
+    payLoading[id] = false;
+  }
+}
 onMounted(() => {
   bookings.fetchBookings().catch(console.error);
 });

@@ -1,7 +1,10 @@
 // src/stores/auth.js
 import { defineStore } from "pinia";
 import api from "../utils/api";
-import router from "../router"; // used for redirects after login/logout
+import router from "../router";
+import { getExistingSubscription, sendSubscriptionToServer, detachSubscription } from "../utils/pushClient";
+import { joinSocket, setupSocketListeners } from "../utils/socket";
+import { useBookingsStore } from "./bookings";
 
 export const useAuthStore = defineStore("auth", {
   state: () => ({
@@ -10,7 +13,6 @@ export const useAuthStore = defineStore("auth", {
     loading: false,
   }),
 
-  // Add getters so Navbar can read these reactively
   getters: {
     isLoggedIn: (state) => !!state.token,
     role: (state) => state.user?.role ?? null,
@@ -21,29 +23,50 @@ export const useAuthStore = defineStore("auth", {
       this.token = t;
       if (t) localStorage.setItem("token", t);
       else localStorage.removeItem("token");
-      // also update api helper's storage so it uses same token on next requests
       api._setLocalToken(t);
     },
 
-    // convenience: set both user + token after login/register
     setAuth(user, token) {
       if (token) this.setToken(token);
       this.user = user ?? this.user;
     },
 
     async fetchMe() {
-      // try /auth/me to get current user (protected route)
       if (!this.token) return null;
       this.loading = true;
       try {
         const res = await api.get("/auth/me");
-        // api returns { status, body }
         this.user = res.body?.user ?? res.body;
+
+        // join socket and setup listeners (safe to call multiple times)
+        try {
+          const uid = this.user?.id ?? this.user?._id;
+          if (uid) {
+            joinSocket(uid);
+            // attach socket listeners and wire to bookings store
+            setupSocketListeners(useBookingsStore());
+          }
+        } catch (e) {
+          console.warn("Socket join/setup after fetchMe failed", e);
+        }
+
         this.loading = false;
+
+        // non-blocking: attach any existing subscription (for cases user subscribed before login)
+        (async () => {
+          try {
+            const existing = await getExistingSubscription();
+            if (existing) {
+              await sendSubscriptionToServer(typeof existing.toJSON === "function" ? existing : existing);
+            }
+          } catch (e) {
+            console.warn("Push attach after fetchMe failed", e);
+          }
+        })();
+
         return this.user;
       } catch (err) {
         this.loading = false;
-        // if 401, api's request will have attempted refresh (see api.js). If refresh failed, clear token.
         this.logout();
         throw err;
       }
@@ -53,14 +76,34 @@ export const useAuthStore = defineStore("auth", {
       this.loading = true;
       try {
         const res = await api.post("/auth/login", { email, password });
-        // expect backend returns { user: {...}, accessToken: '...' }
         const acc = res.body?.accessToken || res.body?.token || res.body?.access_token;
         if (acc) this.setToken(acc);
-        if (res.body?.user) this.user = res.body.user;
-        else {
-          // if user is not included, fetch me
-          await this.fetchMe();
+        if (res.body?.user) {
+          this.user = res.body.user;
+          // join socket and setup listeners
+          try {
+            const uid = this.user?.id ?? this.user?._id;
+            if (uid) {
+              joinSocket(uid);
+              setupSocketListeners(useBookingsStore());
+            }
+          } catch (e) {
+            console.warn("Socket join/setup after login failed", e);
+          }
+        } else {
+          await this.fetchMe(); // fetchMe will call joinSocket + setup
         }
+
+        // try to attach subscription immediately (await so it runs now, but errors are caught)
+        try {
+          const existing = await getExistingSubscription();
+          if (existing) {
+            await sendSubscriptionToServer(typeof existing.toJSON === "function" ? existing : existing);
+          }
+        } catch (e) {
+          console.warn("Push attach after login failed", e);
+        }
+
         this.loading = false;
         return this.user;
       } catch (err) {
@@ -70,15 +113,35 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async register(payload) {
-      // payload: { name, email, password, role }
       this.loading = true;
       try {
         const res = await api.post("/auth/register", payload);
-        // backend registers and returns { user, accessToken } based on your code
         const acc = res.body?.accessToken || res.body?.token || res.body?.access_token;
         if (acc) this.setToken(acc);
-        if (res.body?.user) this.user = res.body.user;
-        else await this.fetchMe();
+        if (res.body?.user) {
+          this.user = res.body.user;
+          try {
+            const uid = this.user?.id ?? this.user?._id;
+            if (uid) {
+              joinSocket(uid);
+              setupSocketListeners(useBookingsStore());
+            }
+          } catch (e) {
+            console.warn("Socket join/setup after register failed", e);
+          }
+        } else {
+          await this.fetchMe();
+        }
+
+        try {
+          const existing = await getExistingSubscription();
+          if (existing) {
+            await sendSubscriptionToServer(typeof existing.toJSON === "function" ? existing : existing);
+          }
+        } catch (e) {
+          console.warn("Push attach after register failed", e);
+        }
+
         this.loading = false;
         return this.user;
       } catch (err) {
@@ -88,21 +151,43 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async logout() {
-      // call server logout to clear refresh cookie if you have endpoint
+      try { await api.post("/auth/logout"); } catch (e) {}
+
+      // best-effort server unsubscribe by userId
       try {
-        await api.post("/auth/logout"); // ignore errors
-      } catch (e) {}
+        const myId = this.user?.id ?? this.user?._id ?? null;
+        if (myId) {
+          await api.post("/notifications/unsubscribe", { userId: myId });
+        } else {
+          await api.post("/notifications/unsubscribe", {});
+        }
+      } catch (e) {
+        console.warn("Server-side unsubscribe failed", e);
+      }
+
+      // attempt to unsubscribe locally and tell server to remove endpoint
+      try {
+        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            const subscription = await reg.pushManager.getSubscription();
+            if (subscription) {
+              try {
+                await api.post("/notifications/unsubscribe", { endpoint: subscription.endpoint });
+              } catch (e) {}
+              await subscription.unsubscribe();
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Local unsubscribe failed", e);
+      }
+
       this.user = null;
       this.setToken(null);
-      // redirect to homepage so Navbar updates visually
-      try {
-        router.push("/");
-      } catch (e) {
-        // ignore (defensive)
-      }
+      try { router.push("/"); } catch (e) {}
     },
 
-    /** helper to try refresh manually (optional) */
     async refreshToken() {
       try {
         const res = await api.raw("/auth/refresh", { method: "POST" }, false);
@@ -115,14 +200,9 @@ export const useAuthStore = defineStore("auth", {
       }
     },
 
-    /**
-     * Helper for login flow: call after setAuth to redirect user to the right dashboard.
-     * Use in LoginPage.vue after successful login or register: auth.setAuth(user, token); auth.afterLoginRedirect();
-     */
     afterLoginRedirect() {
       if (!this.user) return router.push("/");
       if (this.user.role === "provider") return router.push("/provider/dashboard");
-      // default for normal users
       return router.push("/dashboard");
     },
   },

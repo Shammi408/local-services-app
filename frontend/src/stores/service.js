@@ -1,53 +1,69 @@
-// src/stores/services.js
 import { defineStore } from "pinia";
 import api from "../utils/api";
 
+// normalize image array to always be [{ url, public_id }]
+function normalizeImages(arr) {
+  if (!arr) return [];
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((it) => {
+      if (!it) return null;
+      if (typeof it === "string") return { url: it, public_id: null };
+      if (typeof it === "object") {
+        const url = it.url || it.secure_url || "";
+        const public_id = it.public_id || it.publicId || null;
+        if (!url) return null;
+        return { url, public_id };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
 export const useServicesStore = defineStore("services", {
   state: () => ({
-    items: [],           // list of services (current page)
-    total: 0,            // optional total if backend provides
+    items: [],       // list of services (current page)
+    total: 0,
     page: 1,
     limit: 12,
     totalPages: 1,
     loadingList: false,
     loadingItem: false,
-    current: null,       // loaded single service
+    current: null,   // single service
     error: null
   }),
-  actions: {
-    // helper to build query string from params
-    _buildQuery(params = {}) {
-      const p = { page: this.page, limit: this.limit, ...params };
-      const qs = new URLSearchParams();
-      Object.entries(p).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && v !== "") qs.append(k, v);
-      });
-      return qs.toString() ? `?${qs.toString()}` : "";
-    },
 
-    // fetch list of services (supports filters like city, q, category, page, limit)
+  actions: {
+    // fetch list of services
     async fetchList(params = {}) {
       this.loadingList = true;
       this.error = null;
       try {
-        // merge params with store defaults
         const page = params.page ?? this.page;
         const limit = params.limit ?? this.limit;
+
         const qs = new URLSearchParams();
         qs.set("page", page);
         qs.set("limit", limit);
         if (params.q) qs.set("q", params.q);
-        if (params.city) qs.set("city", params.city);
+        // city removed intentionally
         if (params.category) qs.set("category", params.category);
+        if (params.tag) qs.set("tag", params.tag);
+        if (params.providerId) qs.set("providerId", params.providerId);
 
         const res = await api.get(`/services?${qs.toString()}`);
         const body = res.body ?? res;
-        // expect { items, total, page, limit, totalPages }
-        this.items = body.items ?? [];
+
+        this.items = (body.items ?? []).map(svc => ({
+          ...svc,
+          images: normalizeImages(svc.images)
+        }));
+
         this.total = body.total ?? this.items.length;
         this.page = body.page ?? page;
         this.limit = body.limit ?? limit;
-        this.totalPages = body.totalPages ?? Math.ceil(this.total / this.limit);
+        this.totalPages = body.totalPages ?? Math.max(1, Math.ceil(this.total / this.limit));
+
         this.loadingList = false;
         return this.items;
       } catch (err) {
@@ -63,9 +79,13 @@ export const useServicesStore = defineStore("services", {
       this.error = null;
       try {
         const res = await api.get(`/services/${id}`);
-        // expect res.body to be the service object or { service: {...} }
         const body = res.body ?? res;
-        this.current = body?.service ?? body;
+
+        this.current = {
+          ...body,
+          images: normalizeImages(body.images)
+        };
+
         this.loadingItem = false;
         return this.current;
       } catch (err) {
@@ -75,11 +95,10 @@ export const useServicesStore = defineStore("services", {
       }
     },
 
-    // simple helper to create a chat with provider (backend must implement)
+    // start chat helper
     async startChatWithProvider(providerId, serviceId) {
       try {
         const res = await api.post("/chats", { providerId, serviceId });
-        // expect res.body.chatId or res.body._id or entire chat object
         return res.body;
       } catch (err) {
         throw err;

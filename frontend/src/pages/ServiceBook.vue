@@ -72,7 +72,7 @@ async function load() {
 
 function onBooked(booking) {
   // Booking succeeded. Navigate to user's bookings page
-  router.replace("/bookings");
+  router.push("/bookings");
 }
 
 function onClose() {

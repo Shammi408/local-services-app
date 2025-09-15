@@ -4,7 +4,7 @@ import Service from "../models/Service.model.js";
 import Booking from "../models/Booking.model.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import mongoose from "mongoose";
-
+import Payment from "../models/Payment.js";
 const router = express.Router();
 
 // Protect all admin routes
@@ -12,27 +12,25 @@ router.use(requireAuth, requireRole("admin"));
 
 /**
  * GET /api/admin/stats
- * Returns basic counts + bookings by day (last 30 days)
+ * Returns basic counts + bookings by day (last 30 days) and revenue info
  */
 router.get("/stats", async (req, res) => {
   try {
     const now = new Date();
     const start = new Date(now);
-    start.setDate(start.getDate() - 29); // last 30 days inclusive
+    start.setDate(start.getDate() - 29); // last 30 days inclusive (today and 29 previous)
 
     const usersCount = await User.countDocuments({});
     const providersCount = await User.countDocuments({ role: "provider" });
     const servicesCount = await Service.countDocuments({});
     const bookingsCount = await Booking.countDocuments({});
 
-    // bookings by day (last 30 days)
+    // --- bookings by day (last 30 days) ---
     const bookingsByDay = await Booking.aggregate([
       { $match: { date: { $gte: start } } },
       {
         $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$date" }
-          },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
           count: { $sum: 1 }
         }
       },
@@ -47,12 +45,52 @@ router.get("/stats", async (req, res) => {
       const key = d.toISOString().slice(0, 10);
       days.push(key);
     }
-    const bookingsMap = Object.fromEntries(
-      (bookingsByDay || []).map((r) => [r._id, r.count])
-    );
+    const bookingsMap = Object.fromEntries((bookingsByDay || []).map((r) => [r._id, r.count]));
     const bookingsSeries = days.map((day) => ({ day, count: bookingsMap[day] || 0 }));
 
-    // role breakdown (users vs providers)
+    // --- revenue by day (paid payments only) ---
+    // NOTE: Payment.amount assumed to be stored in paise (integer). Adjust if you store rupees.
+    const revenueByDayAgg = await Payment.aggregate([
+      { $match: { status: "paid", createdAt: { $gte: start } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          totalPaise: { $sum: "$amount" }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+    const revenueMap = Object.fromEntries((revenueByDayAgg || []).map(r => [r._id, r.totalPaise]));
+    const revenueSeries = days.map(day => ({ day, amountPaise: revenueMap[day] || 0 }));
+
+    // --- payments totals and counts ---
+    const paymentsTotalAgg = await Payment.aggregate([
+      { $match: { status: "paid" } },
+      { $group: { _id: null, totalPaise: { $sum: "$amount" }, count: { $sum: 1 } } }
+    ]);
+    const totalPaidPaise = paymentsTotalAgg?.[0]?.totalPaise ?? 0;
+    const paidPaymentsCount = paymentsTotalAgg?.[0]?.count ?? 0;
+    const pendingPaymentsCount = await Payment.countDocuments({ status: { $ne: "paid" } });
+
+    // --- top earning providers (all-time) ---
+    const topProvidersAgg = await Payment.aggregate([
+      { $match: { status: "paid" } },
+      { $group: { _id: "$providerId", totalPaise: { $sum: "$amount" } } },
+      { $sort: { totalPaise: -1 } },
+      { $limit: 8 },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "provider"
+        }
+      },
+      { $unwind: { path: "$provider", preserveNullAndEmptyArrays: true } },
+      { $project: { providerId: "$_id", providerName: "$provider.name", totalPaise: 1 } }
+    ]);
+
+    // role breakdown
     const userRoles = [
       { role: "user", count: await User.countDocuments({ role: "user" }) },
       { role: "provider", count: providersCount },
@@ -65,7 +103,15 @@ router.get("/stats", async (req, res) => {
       servicesCount,
       bookingsCount,
       bookingsSeries,
-      userRoles
+      userRoles,
+
+      // money fields
+      totalRevenuePaise: totalPaidPaise,
+      totalRevenue: totalPaidPaise / 100, // rupees
+      paidPaymentsCount,
+      pendingPaymentsCount,
+      revenueSeries, // [{day, amountPaise}]
+      topProviders: topProvidersAgg
     });
   } catch (err) {
     console.error("GET /api/admin/stats error:", err);
@@ -101,6 +147,22 @@ router.get("/users", async (req, res) => {
     res.json({ items, total, page, limit, totalPages: Math.ceil(total / limit) || 1 });
   } catch (err) {
     console.error("GET /api/admin/users error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+// GET /api/admin/payments?limit=20
+router.get("/payments", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || "20", 10), 200);
+    const items = await Payment.find({})
+      .populate("userId", "name email")
+      .populate("providerId", "name email")
+      .populate("bookingId", "serviceId date")
+      .sort({ createdAt: -1 })
+      .limit(limit);
+    res.json({ items });
+  } catch (err) {
+    console.error("GET /api/admin/payments error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
