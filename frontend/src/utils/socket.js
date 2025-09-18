@@ -3,7 +3,16 @@ import { io } from "socket.io-client";
 import { showToast } from "./toast";
 import { useBookingsStore } from "../stores/bookings";
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3000";
+// Prefer explicit VITE_SOCKET_URL if provided, otherwise derive backend origin from VITE_API_BASE.
+// VITE_API_BASE should be like: https://your-backend.onrender.com/api
+const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:3000/api";
+// remove trailing /api to get backend origin (http(s)://host[:port])
+const backendOrigin = (import.meta.env.VITE_SOCKET_URL) 
+  ? import.meta.env.VITE_SOCKET_URL 
+  : apiBase.replace(/\/api\/?$/, "");
+
+// Use backendOrigin for socket connection. When backendOrigin starts with https => socket.io uses wss automatically.
+const SOCKET_URL = backendOrigin;
 
 const socket = io(SOCKET_URL, {
   autoConnect: false,
