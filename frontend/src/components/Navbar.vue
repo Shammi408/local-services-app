@@ -31,6 +31,10 @@
         >
           Dashboard
         </router-link>
+        <!-- admin link: only show if user is logged in and is admin -->
+        <router-link v-if="auth.user?.role === 'admin'" to="/admin" class="btn admin">
+          Admin Dashboard
+        </router-link>
       </div>
 
       <div class="nav-right" ref="navRight">
