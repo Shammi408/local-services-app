@@ -29,10 +29,18 @@ dotenv.config();
 connectDB();
 
 const app = express();
-
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 // Middlewares
 app.use(helmet());
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => {
+    // allow no-origin requests like Postman or server-to-server
+    if (!origin || origin === FRONTEND_URL) return cb(null, true);
+    // allow the FRONTEND_URL; change this to be stricter in prod
+    return cb(null, true);
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
@@ -40,7 +48,7 @@ app.use(morgan("dev"));
 // HTTP + Socket.io
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "http://localhost:5173", methods: ["GET", "POST"] }
+  cors: { origin: FRONTEND_URL, methods: ["GET", "POST"], credentials: true },
 });
 
 // socket logic

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36" version="28.1.1">
+  <diagram id="de18d028" name="ERD">
+    <mxGraphModel dx="3602" dy="1308" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="R2" value="User_id: ObjectId (PK)&lt;div&gt;name: String&lt;/div&gt;&lt;div&gt;email: String (unique)&lt;/div&gt;&lt;div&gt;phone: String&lt;/div&gt;&lt;div&gt;address: String&lt;/div&gt;&lt;div&gt;profilePic: {url, public_id}&lt;/div&gt;&lt;div&gt;passwordHash: String&lt;/div&gt;&lt;div&gt;role: enum(user,provider,admin)&lt;/div&gt;&lt;div&gt;isVerified: Boolean&lt;/div&gt;&lt;div&gt;services: [String]&lt;/div&gt;&lt;div&gt;experience: String&lt;/div&gt;&lt;div&gt;&amp;nbsp;{ timestamps }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-140" y="460" width="270" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="R3" value="Service_id: ObjectId (PK)&lt;div&gt;title: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;description: String&lt;/span&gt;&lt;/div&gt;&lt;div&gt;category: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;price: Number&lt;/span&gt;&lt;/div&gt;&lt;div&gt;providerId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;images: [{url, public_id}]&lt;/div&gt;&lt;div&gt;isAvailable: Boolean&lt;/div&gt;&lt;div&gt;tags: [String]&lt;/div&gt;&lt;div&gt;ratingAverage: Number&lt;/div&gt;&lt;div&gt;ratingCount: Number&lt;/div&gt;&lt;div&gt;{ timestamps }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="290" y="490" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="R4" value="Booking_id: ObjectId (PK)&lt;div&gt;userId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;providerId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;serviceId: ObjectId (FK =&amp;gt; Service._id)&lt;/div&gt;&lt;div&gt;date: Date&lt;/div&gt;&lt;div&gt;status: enum(pending,confirmed,completed,cancelled)&lt;/div&gt;&lt;div&gt;paid: Boolean&lt;/div&gt;&lt;div&gt;paymentId: ObjectId (FK -&amp;gt; Payment._id)?)&lt;/div&gt;&lt;div&gt;{ timestamps }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="300" y="800" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R5" value="Payment_id: ObjectId (PK)&lt;div&gt;bookingId: ObjectId (FK =&amp;gt; Booking._id)&lt;/div&gt;&lt;div&gt;userId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;providerId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;amount: Number&lt;/div&gt;&lt;div&gt;providerOrderId: String&lt;/div&gt;&lt;div&gt;status: enum(created,paid,failed)&lt;/div&gt;&lt;div&gt;meta: Object&lt;/div&gt;&lt;div&gt;{ timestamps }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-140" y="800" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R6" value="Review_id: ObjectId (PK)&lt;div&gt;userId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;serviceId: ObjectId (FK -&amp;gt; Service._id)&lt;/div&gt;&lt;div&gt;rating: Number (1-5)&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;comment: String&lt;/span&gt;&lt;/div&gt;&lt;div&gt;images: [{url, public_id}] (max 2)&lt;/div&gt;&lt;div&gt;{ timestamps }&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;unique&amp;nbsp;&lt;/div&gt;&lt;div&gt;index (userId, serviceId)&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="300" y="190" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R7" value="Conversation_id: ObjectId (PK)&lt;div&gt;participants: [ObjectId =&amp;gt; User._id]&lt;/div&gt;&lt;div&gt;lastMessageAt: Date&lt;/div&gt;&lt;div&gt;{ timestamps : true }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-560" y="490" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R8" value="Message_id: ObjectId (PK)&lt;div&gt;conversationId: ObjectId (FK =&amp;gt; Conversation._id)&lt;/div&gt;&lt;div&gt;senderId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;text: String&lt;/div&gt;&lt;div&gt;attachments: [String]&lt;/div&gt;&lt;div&gt;readBy: [ObjectId =&amp;gt; User._id]&lt;/div&gt;&lt;div&gt;{ timestamps }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-560" y="800" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R9" value="Notification\n_id: ObjectId (PK)&lt;div&gt;userId: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;senderId: ObjectId (FK =&amp;gt; User._id, nullable)&lt;/div&gt;&lt;div&gt;title: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;body: String&lt;/span&gt;&lt;/div&gt;&lt;div&gt;type: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;payload: Mixed&lt;/div&gt;&lt;div&gt;isRead: Boolean&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;createdAt: Date&lt;/div&gt;&lt;div&gt;index: {userId, isRead, createdAt:-1}&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-140" y="190" width="260" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="R10" value="Support\n_id: ObjectId (PK)&lt;div&gt;name: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;email: String&lt;/div&gt;&lt;div&gt;subject: String&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;message: String&lt;/div&gt;&lt;div&gt;handled: Boolean&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;handledBy: ObjectId (FK =&amp;gt; User._id)&lt;/div&gt;&lt;div&gt;{ timestamps:true }&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="-550" y="200" width="250" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="E201" parent="1" source="R3" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E202" parent="1" source="R4" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E203" parent="1" source="R4" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E204" parent="1" source="R4" target="R3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E205" parent="1" source="R5" target="R4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E206" parent="1" source="R5" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E207" parent="1" source="R5" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E208" parent="1" source="R6" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E209" parent="1" source="R6" target="R3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E210" parent="1" source="R8" target="R7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E211" parent="1" source="R8" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E212" parent="1" source="R9" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E213" parent="1" source="R9" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E214" parent="1" source="R7" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E215" parent="1" source="R10" target="R2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
