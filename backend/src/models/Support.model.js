@@ -1,6 +1,6 @@
-// src/models/Support.model.js
 import mongoose from "mongoose";
 
+// model for contact form
 const SupportSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, trim: true },

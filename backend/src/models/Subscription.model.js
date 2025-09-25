@@ -1,6 +1,6 @@
-// src/models/Subscription.model.js
 import mongoose from "mongoose";
 
+// to provide user with notifications we save thier info
 const SubSchema = new mongoose.Schema({
   endpoint: { type: String, required: true, unique: true },
   keys: {

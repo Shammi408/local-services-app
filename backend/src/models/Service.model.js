@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 
 /**
  * Service model
- *
  * - images: stored as objects { url, public_id } to support Cloudinary
  * - tags: string array, normalized to lowercase + unique on save; server enforces maxTags
  * - text index for quick search across title/description/category/tags

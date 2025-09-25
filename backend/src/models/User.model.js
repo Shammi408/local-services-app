@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 
-// Define schema
+
 const UserSchema = new mongoose.Schema(
   {
     // Full name of the user
@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema(
     // Phone number (optional for now, but useful later for OTP/notifications)
     phone: { type: String },
 
-    // Address (added for profile)
+    // Address (added for/in profile)
     address: { type: String, trim: true },
 
     // Profile picture (URL or base64 string)
